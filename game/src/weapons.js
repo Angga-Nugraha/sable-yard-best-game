@@ -1,277 +1,249 @@
-// Weapons: five guns, a grenade and a vest, each with its own numbers, view
-// model and feel. Accuracy is a resource: spread grows with movement speed,
-// with sustained fire and with firing while airborne, and shrinks when
-// crouched or aiming down sights. The rig owns ammo, reloads and the view
-// models; main.js owns the ray and the damage.
+// SABLE YARD — weapons and the buy shop. Six buy items plus a plate vest.
+// The Rig is the player's weapon state: what is owned, what is selected,
+// magazine and reserve ammo, reload timing and the first-person gun models.
 import * as THREE from 'three';
-import { PALETTE } from './palette.js';
-import { flashTexture } from './textures.js';
+import { PAL } from './palette.js';
 
 export const WEAPONS = {
   p9: {
-    id: 'p9', name: 'Picket P9', kind: 'pistol', price: 0,
-    damage: 26, headMult: 2.5, mag: 12, reserve: 48, auto: false,
-    gap: 0.16, reload: 1.15, spreadStill: 0.004, spreadMove: 0.02, range: 60, kick: 0.006,
-  },
-  scatter: {
-    id: 'scatter', name: 'Broom-12', kind: 'shotgun', price: 700,
-    damage: 9, pellets: 8, headMult: 2, mag: 6, reserve: 24, auto: false,
-    gap: 0.85, reload: 2.3, spreadStill: 0.045, spreadMove: 0.06, range: 26, kick: 0.028,
+    id: 'p9', slot: 1, name: 'P9 Sidearm', kind: 'p9', price: 0,
+    damage: 22, headMult: 2.5, mag: 12, reserve: 48, rof: 0.16,
+    spread: 0.014, reload: 1.1, range: 30, auto: false, pellets: 1,
+    blurb: 'Reliable sidearm. Free, always in your holster.',
   },
   hornet: {
-    id: 'hornet', name: 'Hornet SMG', kind: 'smg', price: 900,
-    damage: 20, headMult: 2.5, mag: 32, reserve: 96, auto: true,
-    gap: 0.075, reload: 1.5, spreadStill: 0.006, spreadMove: 0.024, range: 45, kick: 0.007,
+    id: 'hornet', slot: 2, name: 'Hornet SMG', kind: 'smg', price: 900,
+    damage: 15, headMult: 2.5, mag: 32, reserve: 96, rof: 0.075,
+    spread: 0.022, reload: 1.5, range: 22, auto: true, pellets: 1,
+    blurb: 'Fast hose. 32 rounds, short reach, close-quarters king.',
   },
   pike: {
-    id: 'pike', name: 'Pike AR', kind: 'rifle', price: 1400,
-    damage: 30, headMult: 2.5, mag: 30, reserve: 90, auto: true,
-    gap: 0.1, reload: 1.9, spreadStill: 0.0022, spreadMove: 0.028, range: 80, kick: 0.009,
+    id: 'pike', slot: 3, name: 'Pike Rifle', kind: 'rifle', price: 1400,
+    damage: 30, headMult: 2.5, mag: 30, reserve: 90, rof: 0.1,
+    spread: 0.009, reload: 1.9, range: 42, auto: true, pellets: 1,
+    blurb: 'Balanced workhorse. The rifle every Vanguard trusts.',
   },
-  longshot: {
-    id: 'longshot', name: 'Needle DMR', kind: 'dmr', price: 2000,
-    damage: 85, headMult: 2.5, mag: 5, reserve: 20, auto: false,
-    gap: 0.95, reload: 2.6, spreadStill: 0.0008, spreadMove: 0.05, range: 120, kick: 0.02,
+  dmr: {
+    id: 'dmr', slot: 4, name: 'Longshot DMR', kind: 'dmr', price: 2300,
+    damage: 68, headMult: 2.5, mag: 8, reserve: 24, rof: 0.55,
+    spread: 0.003, reload: 2.4, range: 60, auto: false, pellets: 1, zoom: true,
+    blurb: 'Scoped marksman rifle. One shot, one down, at any range.',
+  },
+  shotgun: {
+    id: 'shotgun', slot: 5, name: 'Breacher Shotgun', kind: 'shotgun', price: 1100,
+    damage: 11, headMult: 2.5, mag: 6, reserve: 24, rof: 0.85,
+    spread: 0.05, reload: 2.6, range: 14, auto: false, pellets: 8,
+    blurb: 'Eight pellets of bad news. Devastating up close.',
+  },
+  grenade: {
+    id: 'grenade', slot: 6, name: 'Spark Grenade', kind: 'grenade', price: 300,
+    damage: 90, headMult: 1, mag: 1, reserve: 0, rof: 0.9,
+    spread: 0, reload: 0, range: 0, auto: false, pellets: 1, throwable: true,
+    blurb: 'Thrown spark charge. Arcs, fuses, clears a corner.',
   },
 };
 
-export const GRENADE = { id: 'spark', name: 'Spark grenade', price: 300, fuse: 1.8, radius: 7, maxDamage: 120 };
-export const VEST = { id: 'vest', name: 'Plated vest', price: 400, bonusHp: 25 };
+export const VEST = {
+  id: 'vest', name: 'Plate Vest', price: 650, armor: 50,
+  blurb: 'Steel plates. Soaks half of every hit until it breaks.',
+};
 
-const ORDER = ['p9', 'scatter', 'hornet', 'pike', 'longshot'];
+export const SHOP = [
+  WEAPONS.p9, WEAPONS.hornet, WEAPONS.pike, WEAPONS.dmr, WEAPONS.shotgun, WEAPONS.grenade, VEST,
+];
 
-export function createWeaponRig(camera, audio) {
-  const grip = new THREE.MeshStandardMaterial({ color: new THREE.Color(PALETTE.hairline), roughness: 0.7, metalness: 0.2 });
-  const dark = new THREE.MeshStandardMaterial({ color: new THREE.Color('#211a15'), roughness: 0.55, metalness: 0.3 });
-  const steel = new THREE.MeshStandardMaterial({ color: new THREE.Color('#6b6259'), roughness: 0.45, metalness: 0.4 });
+export const START_MONEY = 800;
+export const KILL_REWARD = 150;
+export const ROUND_WIN_REWARD = 400;
+export const ROUND_LOSS_REWARD = 150;
 
-  function part(w, h, d, x, y, z, mat) {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-    mesh.position.set(x, y, z);
-    return mesh;
-  }
-
-  // A barrel along -z (down the sights).
-  function barrel(r, len, x, y, z, mat) {
-    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 12), mat);
-    mesh.rotation.x = Math.PI / 2;
-    mesh.position.set(x, y, z);
-    return mesh;
-  }
-
-  const amberLens = new THREE.MeshStandardMaterial({
-    color: new THREE.Color('#ffb347'), emissive: new THREE.Color('#ff9a2e'), emissiveIntensity: 1.6, roughness: 0.2, metalness: 0.1,
-  });
-
-  // One view model per gun, built from boxes and cylinders, each with its own
-  // silhouette: slide and sights on the pistol, pump and tube on the shotgun,
-  // short body and suppressor on the SMG, handguard, rail, magazine and brake
-  // on the rifle, scope and long barrel on the DMR.
-  const models = {};
-  const p9 = new THREE.Group();
-  p9.add(part(0.07, 0.08, 0.32, 0, 0.01, -0.1, steel));
-  p9.add(barrel(0.018, 0.1, 0, 0.01, -0.3, dark));
-  p9.add(part(0.06, 0.13, 0.08, 0, -0.09, 0.04, grip));
-  p9.add(part(0.05, 0.02, 0.09, 0, -0.05, -0.03, dark));
-  p9.add(part(0.012, 0.02, 0.012, 0, 0.06, -0.24, dark));
-  p9.add(part(0.05, 0.02, 0.015, 0, 0.06, 0.05, dark));
-  models.p9 = p9;
-  const scatter = new THREE.Group();
-  scatter.add(part(0.09, 0.11, 0.34, 0, 0, -0.05, dark));
-  scatter.add(barrel(0.03, 0.42, 0, 0.03, -0.42, steel));
-  scatter.add(barrel(0.025, 0.36, 0, -0.03, -0.4, grip));
-  scatter.add(part(0.08, 0.07, 0.2, 0, -0.045, -0.32, grip));
-  scatter.add(part(0.08, 0.1, 0.24, 0, -0.02, 0.26, dark));
-  scatter.add(part(0.07, 0.1, 0.08, 0, -0.09, 0.12, grip));
-  scatter.add(part(0.012, 0.02, 0.012, 0, 0.07, -0.6, dark));
-  models.scatter = scatter;
-  const hornet = new THREE.Group();
-  hornet.add(part(0.08, 0.09, 0.3, 0, 0, -0.04, dark));
-  hornet.add(barrel(0.026, 0.2, 0, 0.02, -0.28, steel));
-  hornet.add(barrel(0.032, 0.16, 0, 0.02, -0.44, grip));
-  hornet.add(part(0.07, 0.07, 0.16, 0, 0, -0.22, grip));
-  hornet.add(part(0.05, 0.16, 0.06, 0, -0.11, 0.02, grip));
-  hornet.add(part(0.06, 0.08, 0.18, 0, -0.01, 0.22, dark));
-  hornet.add(part(0.07, 0.05, 0.05, 0, -0.06, 0.1, steel));
-  hornet.add(part(0.012, 0.02, 0.012, 0, 0.06, -0.36, dark));
-  models.hornet = hornet;
-  const pike = new THREE.Group();
-  pike.add(part(0.09, 0.1, 0.4, 0, 0, -0.06, steel));
-  pike.add(barrel(0.022, 0.4, 0, 0.02, -0.44, dark));
-  pike.add(barrel(0.035, 0.06, 0, 0.02, -0.64, grip));
-  pike.add(part(0.08, 0.08, 0.3, 0, 0.01, -0.32, dark));
-  pike.add(part(0.03, 0.015, 0.28, 0, 0.06, -0.32, grip));
-  pike.add(part(0.07, 0.09, 0.22, 0, -0.01, 0.28, dark));
-  const pikeMag = part(0.06, 0.14, 0.1, 0, -0.11, -0.02, grip);
-  pikeMag.rotation.x = 0.15;
-  pike.add(pikeMag);
-  pike.add(part(0.06, 0.1, 0.07, 0, -0.09, 0.14, grip));
-  pike.add(part(0.05, 0.05, 0.1, 0, 0.075, -0.1, dark));
-  pike.add(part(0.015, 0.04, 0.015, 0, 0.06, -0.5, dark));
-  models.pike = pike;
-  const longshot = new THREE.Group();
-  longshot.add(part(0.08, 0.09, 0.5, 0, 0, -0.12, dark));
-  longshot.add(barrel(0.018, 0.55, 0, 0.015, -0.55, steel));
-  longshot.add(barrel(0.03, 0.05, 0, 0.015, -0.82, grip));
-  longshot.add(barrel(0.035, 0.22, 0, 0.075, -0.12, steel));
-  const lens = barrel(0.03, 0.012, 0, 0.075, -0.235, amberLens);
-  longshot.add(lens);
-  longshot.add(part(0.07, 0.06, 0.2, 0, -0.02, -0.35, grip));
-  longshot.add(part(0.07, 0.09, 0.26, 0, -0.01, 0.3, dark));
-  longshot.add(part(0.05, 0.1, 0.08, 0, -0.1, 0, grip));
-  longshot.add(part(0.06, 0.1, 0.07, 0, -0.09, 0.16, grip));
-  models.longshot = longshot;
-  for (const id of ORDER) {
-    models[id].position.set(0.3, -0.25, -0.55);
-    models[id].scale.setScalar(0.78);
-    models[id].visible = false;
-    camera.add(models[id]);
-  }
-
-  const flash = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.44, 0.44),
-    new THREE.MeshBasicMaterial({ map: flashTexture(), transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide }),
-  );
-  flash.position.set(0.3, -0.22, -1.0);
-  flash.visible = false;
-  camera.add(flash);
-  const flashLight = new THREE.PointLight(new THREE.Color(PALETTE.muzzle), 0, 7);
-  flashLight.position.set(0.3, -0.21, -0.7);
-  camera.add(flashLight);
-
-  const state = {
-    current: 'p9',
-    owned: { p9: true },
-    ammo: {},
-    grenades: 0,
-    cooldown: 0,
-    reloadLeft: 0,
-    flash: 0,
-    kick: 0,
-    heat: 0,
-    bobPhase: 0,
+// Build a small first-person gun from boxes: barrel, muzzle, handguard,
+// stock, magazine and sights. Different silhouette per weapon kind.
+function buildGunModel(kind) {
+  const metal = new THREE.MeshStandardMaterial({ color: PAL.gunMetal, roughness: 0.45, metalness: 0.6 });
+  const grip = new THREE.MeshStandardMaterial({ color: PAL.gunGrip, roughness: 0.85, metalness: 0.05 });
+  const accent = new THREE.MeshStandardMaterial({ color: 0x8a6a2a, roughness: 0.5, metalness: 0.4 });
+  const g = new THREE.Group();
+  const add = (w, h, d, x, y, z, mat = metal) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    g.add(m);
+    return m;
   };
-  for (const id of ORDER) state.ammo[id] = { mag: WEAPONS[id].mag, reserve: WEAPONS[id].reserve };
-
-  function def() {
-    return WEAPONS[state.current];
+  if (kind === 'p9') {
+    add(0.05, 0.07, 0.22, 0, 0, -0.1); // slide
+    add(0.045, 0.05, 0.1, 0, -0.05, 0.02, grip); // grip
+    add(0.02, 0.03, 0.02, 0, 0.05, -0.18); // front sight
+    add(0.04, 0.02, 0.05, 0, 0.045, 0.06); // rear sight
+  } else if (kind === 'smg') {
+    add(0.06, 0.08, 0.34, 0, 0, -0.12); // body
+    add(0.03, 0.03, 0.16, 0, 0.01, -0.36); // barrel
+    add(0.05, 0.09, 0.1, 0, -0.02, -0.2, grip); // foregrip
+    add(0.05, 0.12, 0.06, 0, -0.09, 0.04, grip); // grip
+    add(0.04, 0.1, 0.04, 0, -0.1, -0.05, grip); // magazine
+    add(0.02, 0.03, 0.02, 0, 0.055, -0.28); // sight
+  } else if (kind === 'dmr') {
+    add(0.06, 0.09, 0.5, 0, 0, -0.16); // long body
+    add(0.025, 0.025, 0.3, 0, 0.01, -0.52); // barrel
+    add(0.05, 0.05, 0.08, 0, 0.01, -0.66, accent); // muzzle brake
+    add(0.05, 0.07, 0.14, 0, 0.07, -0.12, accent); // scope
+    add(0.05, 0.1, 0.05, 0, -0.1, 0.02, grip); // magazine
+    add(0.05, 0.08, 0.12, 0, -0.01, 0.14, grip); // stock
+  } else if (kind === 'shotgun') {
+    add(0.07, 0.09, 0.42, 0, 0, -0.12); // receiver
+    add(0.05, 0.05, 0.34, 0, 0.02, -0.44); // barrel
+    add(0.045, 0.045, 0.3, 0, -0.03, -0.4); // pump tube
+    add(0.06, 0.07, 0.08, 0, -0.02, -0.3, grip); // pump
+    add(0.05, 0.12, 0.06, 0, -0.1, 0.06, grip); // grip
+    add(0.05, 0.09, 0.14, 0, -0.01, 0.16, grip); // stock
+  } else { // rifle
+    add(0.06, 0.08, 0.4, 0, 0, -0.14); // receiver + handguard
+    add(0.03, 0.03, 0.22, 0, 0.01, -0.44); // barrel
+    add(0.04, 0.04, 0.06, 0, 0.01, -0.56); // muzzle
+    add(0.045, 0.11, 0.05, 0, -0.1, -0.04, grip); // magazine
+    add(0.05, 0.11, 0.06, 0, -0.09, 0.08, grip); // grip
+    add(0.05, 0.08, 0.14, 0, -0.01, 0.16, grip); // stock
+    add(0.02, 0.035, 0.02, 0, 0.055, -0.32); // front sight
+    add(0.04, 0.02, 0.06, 0, 0.05, 0.02); // rear sight
   }
+  return g;
+}
 
-  function step(dt, moving) {
-    state.cooldown = Math.max(0, state.cooldown - dt);
-    state.flash = Math.max(0, state.flash - dt);
-    state.heat = Math.max(0, state.heat - dt * 1.6);
-    // Recoil kick with a slow recovery: the kick reads on screen instead of
-    // snapping back in a single frame.
-    state.kick += (0 - state.kick) * Math.min(1, dt * 10);
-    const model = models[state.current];
-    state.bobPhase += dt * (2 + moving * 1.6);
-    const bob = moving > 0.5 ? Math.sin(state.bobPhase * 2) * 0.006 : 0;
-    model.position.set(0.3 + bob, -0.25 + Math.abs(Math.cos(state.bobPhase)) * (moving > 0.5 ? 0.008 : 0), -0.55 + state.kick);
-    model.rotation.x = state.kick * 2.2;
-    flash.visible = state.flash > 0;
-    flash.rotation.z = state.flash * 30;
-    flashLight.intensity = state.flash > 0 ? 30 : 0;
-    if (state.reloadLeft > 0) {
-      state.reloadLeft = Math.max(0, state.reloadLeft - dt);
-      model.rotation.x = -0.55 * Math.min(1, (def().reload - state.reloadLeft) * 2);
-      if (state.reloadLeft === 0) {
-        const ammo = state.ammo[state.current];
-        const need = def().mag - ammo.mag;
-        const take = Math.min(need, ammo.reserve);
-        ammo.mag += take;
-        ammo.reserve -= take;
-      }
+export class Rig {
+  constructor(camera) {
+    this.camera = camera;
+    this.state = {
+      current: 'p9',
+      owned: new Set(['p9']),
+      ammo: {},
+    };
+    this.cooldown = 0;
+    this.reloading = 0; // seconds left, 0 when not reloading
+    this.reloadTarget = null;
+    this.recoil = 0;
+    this.viewGroup = new THREE.Group();
+    this.models = {};
+    for (const id of ['p9', 'hornet', 'pike', 'dmr', 'shotgun']) {
+      const m = buildGunModel(WEAPONS[id].kind);
+      m.visible = id === 'p9';
+      this.models[id] = m;
+      this.viewGroup.add(m);
+    }
+    // The view group rides on the camera, low and to the right.
+    this.viewGroup.position.set(0.26, -0.24, -0.55);
+    this.viewGroup.rotation.y = 0.06;
+    camera.add(this.viewGroup);
+    this.reset();
+  }
+  reset() {
+    this.state.current = 'p9';
+    this.state.owned = new Set(['p9']);
+    this.state.ammo = {};
+    for (const id of Object.keys(WEAPONS)) {
+      const w = WEAPONS[id];
+      this.state.ammo[id] = { mag: w.mag, reserve: w.reserve };
+    }
+    this.cooldown = 0;
+    this.reloading = 0;
+    this.reloadTarget = null;
+    this.recoil = 0;
+    this._syncModels();
+  }
+  weapon() {
+    return WEAPONS[this.state.current];
+  }
+  // Buy a weapon (or vest/grenade) with the money offered. Returns the price
+  // when the purchase lands, null when it cannot be afforded. Buying a
+  // weapon you already own costs nothing and just re-arms it.
+  buy(id, money) {
+    if (id === 'vest') {
+      return money >= VEST.price ? VEST.price : null;
+    }
+    const w = WEAPONS[id];
+    if (!w) return null;
+    if (id === 'grenade') {
+      if (money < w.price) return null;
+      this.state.ammo.grenade.mag += 1;
+      this.state.owned.add('grenade');
+      return w.price;
+    }
+    if (this.state.owned.has(id)) return 0;
+    if (money < w.price) return null;
+    this.state.owned.add(id);
+    this.state.ammo[id] = { mag: w.mag, reserve: w.reserve };
+    return w.price;
+  }
+  select(id) {
+    if (!this.state.owned.has(id)) return false;
+    if (this.state.current === id) return true;
+    this.state.current = id;
+    this.reloading = 0;
+    this.reloadTarget = null;
+    this.cooldown = Math.max(this.cooldown, 0.15);
+    this._syncModels();
+    return true;
+  }
+  _syncModels() {
+    for (const [id, m] of Object.entries(this.models)) {
+      m.visible = id === this.state.current;
     }
   }
-
-  return {
-    state,
-    def,
-    step,
-    ready() {
-      return state.ammo[state.current].mag > 0 && state.cooldown === 0 && state.reloadLeft === 0;
-    },
-    hasAmmo() {
-      return state.ammo[state.current].mag > 0;
-    },
-    pullTrigger() {
-      state.cooldown = def().gap;
-      state.flash = 0.09;
-      state.kick = 0.08;
-      state.heat = Math.min(1, state.heat + (def().kind === 'rifle' ? 0.14 : 0.08));
-      audio.shot(def().kind);
-    },
-    takeRound() {
-      const ammo = state.ammo[state.current];
-      if (ammo.mag <= 0) return false;
-      ammo.mag -= 1;
+  ready() {
+    const w = this.weapon();
+    if (this.reloading > 0) return false;
+    if (this.cooldown > 0) return false;
+    if (w.throwable) return this.state.ammo.grenade.mag > 0;
+    return this.state.ammo[w.id].mag > 0;
+  }
+  // Spend one shot's ammo and start the fire-rate cooldown. Returns true
+  // when a shot actually left the barrel.
+  spendShot() {
+    const w = this.weapon();
+    if (!this.ready()) return false;
+    if (w.throwable) {
+      this.state.ammo.grenade.mag -= 1;
+      this.cooldown = w.rof;
       return true;
-    },
-    reload() {
-      const ammo = state.ammo[state.current];
-      if (state.reloadLeft > 0 || ammo.mag === def().mag || ammo.reserve === 0) return false;
-      state.reloadLeft = def().reload;
-      audio.reload();
-      return true;
-    },
-    // Spread in radians: still < moving < airborne, crouch and ADS shrink it, heat grows it.
-    spread(speed, opts = {}) {
-      const d = def();
-      const moveFrac = Math.min(1, speed / 5.4);
-      let spread = d.spreadStill + moveFrac * d.spreadMove;
-      if (opts.airborne) spread += 0.02;
-      if (opts.crouching) spread *= 0.6;
-      if (opts.aiming) spread *= 0.45;
-      return spread * (1 + state.heat * 0.9);
-    },
-    select(id) {
-      if (!state.owned[id] || state.current === id) return false;
-      state.current = id;
-      state.reloadLeft = 0;
-      state.cooldown = Math.max(state.cooldown, 0.25);
-      for (const key of ORDER) models[key].visible = key === id;
-      audio.click();
-      return true;
-    },
-    buy(id, money) {
-      const item = id === 'spark' ? GRENADE : id === 'vest' ? VEST : WEAPONS[id];
-      if (!item) return null;
-      if (id === 'spark' && state.grenades >= 2) return null;
-      if (WEAPONS[id] && state.owned[id]) return null;
-      if (money < item.price) return null;
-      if (WEAPONS[id]) {
-        state.owned[id] = true;
-        state.ammo[id] = { mag: WEAPONS[id].mag, reserve: WEAPONS[id].reserve };
-      } else if (id === 'spark') {
-        state.grenades += 1;
+    }
+    this.state.ammo[w.id].mag -= 1;
+    this.cooldown = w.rof;
+    this.recoil = Math.min(1, this.recoil + (w.kind === 'dmr' || w.kind === 'shotgun' ? 0.9 : 0.35));
+    return true;
+  }
+  reload() {
+    const w = this.weapon();
+    if (w.throwable) return false;
+    const a = this.state.ammo[w.id];
+    if (this.reloading > 0 || a.mag >= w.mag || a.reserve <= 0) return false;
+    this.reloading = w.reload;
+    this.reloadTarget = w.id;
+    return true;
+  }
+  step(dt) {
+    if (this.cooldown > 0) this.cooldown -= dt;
+    if (this.recoil > 0) this.recoil = Math.max(0, this.recoil - dt * 3.2);
+    if (this.reloading > 0) {
+      this.reloading -= dt;
+      if (this.reloading <= 0) {
+        this.reloading = 0;
+        const w = WEAPONS[this.reloadTarget];
+        if (w) {
+          const a = this.state.ammo[w.id];
+          const need = w.mag - a.mag;
+          const take = Math.min(need, a.reserve);
+          a.mag += take;
+          a.reserve -= take;
+        }
+        this.reloadTarget = null;
       }
-      audio.buy();
-      return item.price;
-    },
-    refill() {
-      for (const id of ORDER) state.ammo[id] = { mag: WEAPONS[id].mag, reserve: WEAPONS[id].reserve };
-      state.grenades = 0;
-      state.cooldown = 0;
-      state.reloadLeft = 0;
-      state.flash = 0;
-      state.kick = 0;
-      state.heat = 0;
-    },
-    resetToPistol() {
-      state.owned = { p9: true };
-      state.current = 'p9';
-      for (const key of ORDER) models[key].visible = key === 'p9';
-      this.refill();
-    },
-    show() {
-      for (const key of ORDER) models[key].visible = key === state.current;
-    },
-    // Test helper: world position of the current view model's centre.
-    modelPos() {
-      const v = new THREE.Vector3();
-      models[state.current].getWorldPosition(v);
-      return v;
-    },
-  };
+    }
+    // View-model sway: recoil kicks the gun up, then it settles.
+    this.viewGroup.rotation.x = this.recoil * 0.14;
+    this.viewGroup.position.y = -0.24 + this.recoil * 0.03;
+  }
+  modelPos() {
+    const v = new THREE.Vector3();
+    this.viewGroup.getWorldPosition(v);
+    return v;
+  }
 }

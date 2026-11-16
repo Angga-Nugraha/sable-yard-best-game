@@ -1,13 +1,14 @@
-// SABLE YARD — a best-game-01 entry (Node 22, standard library only). The
-// game is this directory's game/ folder: plain static files a desktop
+// SABLE YARD — best-game-01 entry program (Node 22, standard library only).
+// The game is this directory's game/ folder: plain static files a desktop
 // browser loads offline (game/index.html and its ES modules, three.js
-// vendored under game/vendor/, no network request). This program hands it
-// in: it copies game/ and screenshots/ from beside this file to /output and
-// writes /output/dossier.json, the summary the judge reads, with the
+// vendored under game/vendor/three/, no network request). This program hands
+// it in: it copies game/ and screenshots/ from beside this file to /output
+// and writes /output/dossier.json, the summary the judge reads, with the
 // vendored make.fun library.
 //
-// Serve it locally with `node serve.ts`, then open http://localhost:8080.
-// Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
+// Serve it locally with the tools' static server, then open the game at
+// http://localhost:8080. Outside the grader's container, MAKEFUN_OUTPUT_DIR
+// stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';

@@ -1,523 +1,312 @@
-// Procedural textures for SABLE YARD — every surface is painted on a canvas
-// at boot, so game/ stays self-contained with zero network requests. All
-// randomness comes from fixed seeds, so the same build always paints the
-// same yard.
+// SABLE YARD — procedural textures. Every texture is painted on a canvas at
+// load: no image files, no network. Corrugated container steel, stained
+// concrete, wood crates, labelled barrels, hazard stripes, site letters,
+// chain-link fence, a dusk sky gradient and lit skyline windows.
 import * as THREE from 'three';
-import { mulberry32 } from './rng.js';
+import { Rng } from './rng.js';
 
-function makeCanvas(w, h) {
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  return [canvas, canvas.getContext('2d')];
+function canvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  return c;
+}
+function tex(c, repeatX = 1, repeatY = 1) {
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(repeatX, repeatY);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+function speckle(ctx, w, h, rng, n, colors, sizeMax = 3) {
+  for (let i = 0; i < n; i++) {
+    ctx.fillStyle = colors[Math.floor(rng.next() * colors.length)];
+    ctx.globalAlpha = rng.range(0.05, 0.22);
+    const s = rng.range(1, sizeMax);
+    ctx.fillRect(rng.next() * w, rng.next() * h, s, s);
+  }
+  ctx.globalAlpha = 1;
 }
 
-function toTexture(canvas, repeatX = 1, repeatY = 1) {
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(repeatX, repeatY);
-  tex.anisotropy = 4;
-  return tex;
-}
-
-// Speckle noise over the whole canvas: the grime that stops a flat colour.
-function speckle(g, w, h, random, n, alpha, dark = true) {
-  for (let i = 0; i < n; i += 1) {
-    const v = Math.floor(random() * 60);
-    g.fillStyle = dark
-      ? `rgba(${20 + v},${16 + v},${12 + v},${alpha * random()})`
-      : `rgba(${200 + v},${190 + v},${170 + v},${alpha * random()})`;
-    g.fillRect(random() * w, random() * h, 1 + random() * 3, 1 + random() * 3);
-  }
-}
-
-// Rust streaks running down from the top edge, plus a few blotches.
-function rust(g, w, h, random, count, strength = 0.5) {
-  for (let i = 0; i < count; i += 1) {
-    const x = random() * w;
-    const len = h * (0.15 + random() * 0.6);
-    const grad = g.createLinearGradient(0, 0, 0, len);
-    grad.addColorStop(0, `rgba(122,62,28,${0.55 * strength})`);
-    grad.addColorStop(1, 'rgba(122,62,28,0)');
-    g.fillStyle = grad;
-    g.fillRect(x, 0, 2 + random() * 7, len);
-  }
-  for (let i = 0; i < count / 2; i += 1) {
-    const x = random() * w;
-    const y = random() * h;
-    const r = 4 + random() * 16;
-    const grad = g.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, `rgba(110,58,26,${0.35 * strength})`);
-    grad.addColorStop(1, 'rgba(110,58,26,0)');
-    g.fillStyle = grad;
-    g.beginPath();
-    g.arc(x, y, r, 0, Math.PI * 2);
-    g.fill();
-  }
-}
-
-// Corrugated container metal: vertical ribs, top/bottom rails, rust, stencil label.
-export function containerTexture(base, label, seed = 11) {
-  const random = mulberry32(seed);
-  const [canvas, g] = makeCanvas(512, 256);
-  g.fillStyle = base;
-  g.fillRect(0, 0, 512, 256);
-  // Corrugation: alternating light/dark vertical bands, ~24 ribs across.
-  for (let x = 0; x < 512; x += 21) {
-    g.fillStyle = 'rgba(255,255,255,0.10)';
-    g.fillRect(x, 0, 5, 256);
-    g.fillStyle = 'rgba(0,0,0,0.28)';
-    g.fillRect(x + 10, 0, 6, 256);
-    g.fillStyle = 'rgba(0,0,0,0.12)';
-    g.fillRect(x + 16, 0, 5, 256);
-  }
-  // Horizontal rails top and bottom.
-  g.fillStyle = 'rgba(0,0,0,0.35)';
-  g.fillRect(0, 0, 512, 14);
-  g.fillRect(0, 242, 512, 14);
-  g.fillStyle = 'rgba(255,255,255,0.08)';
-  g.fillRect(0, 14, 512, 3);
-  g.fillRect(0, 239, 512, 3);
-  // Wear: scratches and chips.
-  for (let i = 0; i < 40; i += 1) {
-    g.strokeStyle = `rgba(30,20,14,${0.15 + random() * 0.25})`;
-    g.lineWidth = 1 + random() * 2;
-    const x = random() * 512;
-    const y = random() * 256;
-    g.beginPath();
-    g.moveTo(x, y);
-    g.lineTo(x + (random() * 30 - 15), y + (random() * 10 - 5));
-    g.stroke();
-  }
-  rust(g, 512, 256, random, 26, 0.7);
-  speckle(g, 512, 256, random, 900, 0.25);
-  // Weathering variation per container (seeded): dark grime patches and a
-  // grime band along the bottom edge, so no two container colours read alike.
-  for (let i = 0; i < 5; i += 1) {
-    const px = random() * 460;
-    const py = 30 + random() * 180;
-    const pw = 30 + random() * 90;
-    const ph = 14 + random() * 40;
-    const grad = g.createRadialGradient(px + pw / 2, py + ph / 2, 0, px + pw / 2, py + ph / 2, Math.max(pw, ph) / 2);
-    grad.addColorStop(0, `rgba(24,16,10,${0.16 + random() * 0.18})`);
-    grad.addColorStop(1, 'rgba(24,16,10,0)');
-    g.fillStyle = grad;
-    g.fillRect(px, py, pw, ph);
-  }
-  {
-    const grad = g.createLinearGradient(0, 200, 0, 256);
-    grad.addColorStop(0, 'rgba(20,14,8,0)');
-    grad.addColorStop(1, 'rgba(20,14,8,0.34)');
-    g.fillStyle = grad;
-    g.fillRect(0, 200, 512, 56);
-  }
-  // Stencil label, faded white. The unit code varies with the seed so the
-  // four container colours carry different stencils.
-  const codes = ['22G1', '45R1', '22U1', '31G0'];
-  const code = codes[seed % codes.length];
-  if (label) {
-    g.fillStyle = 'rgba(242,233,216,0.82)';
-    g.font = 'bold 44px system-ui, sans-serif';
-    g.textAlign = 'left';
-    g.textBaseline = 'middle';
-    g.fillText(label, 28, 128);
-    g.font = 'bold 22px system-ui, sans-serif';
-    g.fillStyle = 'rgba(242,233,216,0.55)';
-    g.fillText(`SABLE YARD  •  ${code}`, 28, 168);
-    g.fillStyle = 'rgba(242,233,216,0.4)';
-    g.font = 'bold 20px system-ui, sans-serif';
-    g.fillText(seed % 2 === 0 ? 'MAX 30480 KG' : 'TARE 2250 KG', 28 + random() * 120, 205);
-  }
-  return toTexture(canvas);
-}
-
-// Concrete: patchy pour, stains, hairline cracks, expansion joints.
-export function concreteTexture(base, seed = 23, joints = true) {
-  const random = mulberry32(seed);
-  const [canvas, g] = makeCanvas(512, 512);
-  g.fillStyle = base;
-  g.fillRect(0, 0, 512, 512);
-  // Pour patches: large soft blotches of slightly different tone.
-  for (let i = 0; i < 26; i += 1) {
-    const x = random() * 512;
-    const y = random() * 512;
-    const r = 40 + random() * 110;
-    const light = random() > 0.5;
-    const grad = g.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, light ? 'rgba(255,250,240,0.06)' : 'rgba(20,14,10,0.10)');
+function paintConcrete(rng) {
+  const c = canvas(512, 512);
+  const x = c.getContext('2d');
+  x.fillStyle = '#6f6a61';
+  x.fillRect(0, 0, 512, 512);
+  // Large stains.
+  for (let i = 0; i < 26; i++) {
+    const g = x.createRadialGradient(0, 0, 0, 0, 0, 1);
+    const px = rng.next() * 512;
+    const py = rng.next() * 512;
+    const r = rng.range(30, 130);
+    const dark = rng.chance(0.5);
+    const grad = x.createRadialGradient(px, py, 0, px, py, r);
+    grad.addColorStop(0, dark ? 'rgba(40,36,32,0.28)' : 'rgba(150,140,125,0.16)');
     grad.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = grad;
-    g.beginPath();
-    g.arc(x, y, r, 0, Math.PI * 2);
-    g.fill();
+    x.fillStyle = grad;
+    x.fillRect(px - r, py - r, r * 2, r * 2);
   }
-  // Oil stains.
-  for (let i = 0; i < 9; i += 1) {
-    const x = random() * 512;
-    const y = random() * 512;
-    const r = 14 + random() * 42;
-    const grad = g.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, 'rgba(18,14,10,0.42)');
-    grad.addColorStop(0.7, 'rgba(18,14,10,0.18)');
-    grad.addColorStop(1, 'rgba(18,14,10,0)');
-    g.fillStyle = grad;
-    g.beginPath();
-    g.arc(x, y, r, 0, Math.PI * 2);
-    g.fill();
+  // Expansion joints.
+  x.strokeStyle = 'rgba(30,28,26,0.55)';
+  x.lineWidth = 3;
+  for (let i = 0; i <= 4; i++) {
+    x.beginPath(); x.moveTo(i * 128, 0); x.lineTo(i * 128, 512); x.stroke();
+    x.beginPath(); x.moveTo(0, i * 128); x.lineTo(512, i * 128); x.stroke();
   }
-  // Hairline cracks.
-  for (let i = 0; i < 12; i += 1) {
-    g.strokeStyle = 'rgba(25,18,12,0.5)';
-    g.lineWidth = 1;
-    let x = random() * 512;
-    let y = random() * 512;
-    g.beginPath();
-    g.moveTo(x, y);
-    for (let s = 0; s < 6; s += 1) {
-      x += random() * 40 - 20;
-      y += random() * 40 - 20;
-      g.lineTo(x, y);
+  // Cracks.
+  x.strokeStyle = 'rgba(25,22,20,0.5)';
+  x.lineWidth = 1.5;
+  for (let i = 0; i < 14; i++) {
+    let px = rng.next() * 512;
+    let py = rng.next() * 512;
+    x.beginPath(); x.moveTo(px, py);
+    for (let k = 0; k < 6; k++) {
+      px += rng.range(-28, 28);
+      py += rng.range(-28, 28);
+      x.lineTo(px, py);
     }
-    g.stroke();
+    x.stroke();
   }
-  if (joints) {
-    g.strokeStyle = 'rgba(20,14,10,0.55)';
-    g.lineWidth = 3;
-    g.beginPath();
-    g.moveTo(256, 0);
-    g.lineTo(256, 512);
-    g.moveTo(0, 256);
-    g.lineTo(512, 256);
-    g.stroke();
-  }
-  speckle(g, 512, 512, random, 2600, 0.28);
-  speckle(g, 512, 512, random, 500, 0.2, false);
-  return toTexture(canvas);
+  speckle(x, 512, 512, rng, 5200, ['#55504a', '#7d776c', '#8a8478', '#3f3b36'], 3);
+  return tex(c, 6, 4);
 }
 
-// Wooden crate planks: horizontal boards, grain, gaps, nails, stencil.
-export function crateTexture(base, seed = 37) {
-  const random = mulberry32(seed);
-  const [canvas, g] = makeCanvas(256, 256);
-  g.fillStyle = base;
-  g.fillRect(0, 0, 256, 256);
-  const plankH = 256 / 5;
-  for (let p = 0; p < 5; p += 1) {
-    const y = p * plankH;
-    const shade = 0.9 + random() * 0.2;
-    g.fillStyle = `rgba(${Math.floor(125 * shade)},${Math.floor(93 * shade)},${Math.floor(56 * shade)},1)`;
-    g.fillRect(0, y + 2, 256, plankH - 4);
-    // Grain lines.
-    for (let i = 0; i < 9; i += 1) {
-      g.strokeStyle = `rgba(60,40,20,${0.15 + random() * 0.2})`;
-      g.lineWidth = 1;
-      const gy = y + 4 + random() * (plankH - 8);
-      g.beginPath();
-      g.moveTo(0, gy);
-      g.bezierCurveTo(85, gy + random() * 6 - 3, 170, gy + random() * 6 - 3, 256, gy);
-      g.stroke();
-    }
-    // Nails at the ends.
-    g.fillStyle = 'rgba(40,28,18,0.8)';
-    g.beginPath();
-    g.arc(12, y + plankH / 2, 3, 0, Math.PI * 2);
-    g.arc(244, y + plankH / 2, 3, 0, Math.PI * 2);
-    g.fill();
+function paintContainer(base, label, rng) {
+  const c = canvas(256, 256);
+  const x = c.getContext('2d');
+  x.fillStyle = base;
+  x.fillRect(0, 0, 256, 256);
+  // Corrugated ribs: vertical light/shadow pairs.
+  for (let px = 0; px < 256; px += 16) {
+    x.fillStyle = 'rgba(255,255,255,0.10)';
+    x.fillRect(px, 0, 3, 256);
+    x.fillStyle = 'rgba(0,0,0,0.22)';
+    x.fillRect(px + 8, 0, 5, 256);
   }
-  // Board gaps.
-  g.fillStyle = 'rgba(30,20,12,0.85)';
-  for (let p = 1; p < 5; p += 1) g.fillRect(0, p * plankH - 1, 256, 3);
-  // Frame battens.
-  g.fillStyle = 'rgba(0,0,0,0.18)';
-  g.fillRect(0, 0, 14, 256);
-  g.fillRect(242, 0, 14, 256);
-  rust(g, 256, 256, random, 6, 0.35);
-  speckle(g, 256, 256, random, 500, 0.22);
-  g.fillStyle = 'rgba(242,233,216,0.6)';
-  g.font = 'bold 30px system-ui, sans-serif';
-  g.textAlign = 'center';
-  g.fillText('SABLE', 128, 128);
-  return toTexture(canvas);
+  // Rust streaks running down from the top edge.
+  for (let i = 0; i < 22; i++) {
+    const px = rng.next() * 256;
+    const len = rng.range(30, 200);
+    const w = rng.range(2, 7);
+    const g = x.createLinearGradient(0, 0, 0, len);
+    g.addColorStop(0, 'rgba(122,58,24,0.55)');
+    g.addColorStop(1, 'rgba(122,58,24,0)');
+    x.fillStyle = g;
+    x.fillRect(px, 0, w, len);
+  }
+  // Bottom grime.
+  const g2 = x.createLinearGradient(0, 200, 0, 256);
+  g2.addColorStop(0, 'rgba(0,0,0,0)');
+  g2.addColorStop(1, 'rgba(20,12,8,0.5)');
+  x.fillStyle = g2;
+  x.fillRect(0, 200, 256, 56);
+  // Stencil label.
+  x.fillStyle = 'rgba(240,235,220,0.85)';
+  x.font = 'bold 26px monospace';
+  x.textAlign = 'center';
+  x.fillText(label, 128, 128);
+  x.font = '16px monospace';
+  x.fillText('SABLE LINE', 128, 152);
+  speckle(x, 256, 256, rng, 900, ['#000000', '#ffffff'], 2);
+  return tex(c, 2, 1);
 }
 
-// Barrel: horizontal ribs, a label band, rust at the rims.
-export function barrelTexture(base, label, seed = 41) {
-  const random = mulberry32(seed);
-  const [canvas, g] = makeCanvas(256, 256);
-  g.fillStyle = base;
-  g.fillRect(0, 0, 256, 256);
-  // Vertical brushed shading.
-  for (let x = 0; x < 256; x += 8) {
-    g.fillStyle = random() > 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.07)';
-    g.fillRect(x, 0, 4, 256);
+function paintCrate(rng) {
+  const c = canvas(256, 256);
+  const x = c.getContext('2d');
+  x.fillStyle = '#8a6a42';
+  x.fillRect(0, 0, 256, 256);
+  // Horizontal planks.
+  for (let py = 0; py < 256; py += 42) {
+    x.fillStyle = py % 84 === 0 ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.06)';
+    x.fillRect(0, py, 256, 4);
+    x.strokeStyle = 'rgba(40,26,12,0.5)';
+    x.lineWidth = 2;
+    x.strokeRect(2, py + 2, 252, 40);
   }
-  // Ribs.
-  for (const y of [42, 84, 172, 214]) {
-    g.fillStyle = 'rgba(0,0,0,0.4)';
-    g.fillRect(0, y, 256, 7);
-    g.fillStyle = 'rgba(255,255,255,0.12)';
-    g.fillRect(0, y + 7, 256, 3);
+  // Grain.
+  x.strokeStyle = 'rgba(60,40,18,0.35)';
+  x.lineWidth = 1;
+  for (let i = 0; i < 60; i++) {
+    const py = rng.next() * 256;
+    x.beginPath();
+    x.moveTo(0, py);
+    x.bezierCurveTo(80, py + rng.range(-4, 4), 170, py + rng.range(-4, 4), 256, py);
+    x.stroke();
+  }
+  // Corner nails.
+  x.fillStyle = '#2a2a2a';
+  for (const [px, py] of [[14, 14], [242, 14], [14, 242], [242, 242]]) {
+    x.beginPath(); x.arc(px, py, 4, 0, Math.PI * 2); x.fill();
+  }
+  x.fillStyle = 'rgba(240,235,220,0.8)';
+  x.font = 'bold 22px monospace';
+  x.textAlign = 'center';
+  x.fillText('FRAGILE', 128, 134);
+  return tex(c);
+}
+
+function paintBarrel(base, label, rng) {
+  const c = canvas(128, 256);
+  const x = c.getContext('2d');
+  x.fillStyle = base;
+  x.fillRect(0, 0, 128, 256);
+  // Rolled hoops.
+  x.fillStyle = 'rgba(0,0,0,0.3)';
+  x.fillRect(0, 52, 128, 8);
+  x.fillRect(0, 196, 128, 8);
+  x.fillStyle = 'rgba(255,255,255,0.12)';
+  x.fillRect(0, 48, 128, 4);
+  x.fillRect(0, 192, 128, 4);
+  // Rust drips.
+  for (let i = 0; i < 10; i++) {
+    const px = rng.next() * 128;
+    x.fillStyle = 'rgba(110,52,20,0.5)';
+    x.fillRect(px, rng.next() * 60, rng.range(2, 5), rng.range(20, 90));
   }
   // Label band.
-  g.fillStyle = 'rgba(232,220,196,0.92)';
-  g.fillRect(0, 104, 256, 58);
-  g.fillStyle = 'rgba(30,22,16,0.9)';
-  g.font = 'bold 26px system-ui, sans-serif';
-  g.textAlign = 'center';
-  g.fillText(label, 128, 128);
-  g.font = 'bold 15px system-ui, sans-serif';
-  g.fillStyle = 'rgba(30,22,16,0.65)';
-  g.fillText('SABLE YARD', 128, 150);
-  rust(g, 256, 256, random, 14, 0.6);
-  speckle(g, 256, 256, random, 500, 0.25);
-  return toTexture(canvas);
+  x.fillStyle = 'rgba(240,235,220,0.9)';
+  x.fillRect(14, 96, 100, 56);
+  x.fillStyle = '#222';
+  x.font = 'bold 15px monospace';
+  x.textAlign = 'center';
+  x.fillText(label, 64, 118);
+  x.font = '11px monospace';
+  x.fillText('SABLE YARD', 64, 138);
+  return tex(c);
 }
 
-// Diagonal hazard stripes, yellow on near-black.
-export function hazardTexture() {
-  const [canvas, g] = makeCanvas(128, 128);
-  g.fillStyle = '#191411';
-  g.fillRect(0, 0, 128, 128);
-  g.fillStyle = '#f5a623';
-  for (let x = -128; x < 256; x += 64) {
-    g.beginPath();
-    g.moveTo(x, 128);
-    g.lineTo(x + 32, 128);
-    g.lineTo(x + 160, 0);
-    g.lineTo(x + 128, 0);
-    g.closePath();
-    g.fill();
+function paintHazard() {
+  const c = canvas(128, 128);
+  const x = c.getContext('2d');
+  x.fillStyle = '#e8b81e';
+  x.fillRect(0, 0, 128, 128);
+  x.fillStyle = '#161616';
+  for (let i = -128; i < 256; i += 32) {
+    x.beginPath();
+    x.moveTo(i, 0); x.lineTo(i + 16, 0); x.lineTo(i + 16 + 128, 128); x.lineTo(i + 128, 128);
+    x.closePath(); x.fill();
   }
-  speckle(g, 128, 128, mulberry32(5), 200, 0.2);
-  return toTexture(canvas);
+  return tex(c);
 }
 
-// Big painted letter on transparent ground, for the site decals.
-export function letterTexture(letter, color) {
-  const [canvas, g] = makeCanvas(256, 256);
-  g.clearRect(0, 0, 256, 256);
-  g.fillStyle = color;
-  g.globalAlpha = 0.85;
-  g.font = 'bold 200px system-ui, sans-serif';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillText(letter, 128, 138);
-  // Worn paint: knock out speckles.
-  g.globalCompositeOperation = 'destination-out';
-  const random = mulberry32(9);
-  for (let i = 0; i < 500; i += 1) {
-    g.globalAlpha = 0.12 + random() * 0.25;
-    g.fillRect(random() * 256, random() * 256, 1 + random() * 4, 1 + random() * 4);
+function paintSiteLetter(letter, color) {
+  const c = canvas(256, 256);
+  const x = c.getContext('2d');
+  x.clearRect(0, 0, 256, 256);
+  // Hazard ring.
+  x.strokeStyle = color;
+  x.lineWidth = 10;
+  x.setLineDash([26, 14]);
+  x.strokeRect(14, 14, 228, 228);
+  x.setLineDash([]);
+  // Big painted letter, slightly worn.
+  x.fillStyle = color;
+  x.font = 'bold 170px sans-serif';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  x.fillText(letter, 128, 138);
+  x.fillStyle = 'rgba(0,0,0,0.25)';
+  for (let i = 0; i < 260; i++) {
+    x.fillRect(40 + Math.random() * 176, 40 + Math.random() * 176, 3, 3);
   }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
 }
 
-// Stencil sign: big text, small subtext, on a solid or transparent plate.
-export function signTexture(text, sub, fg = '#f2e9d8', bg = null) {
-  const [canvas, g] = makeCanvas(512, 192);
-  if (bg) {
-    g.fillStyle = bg;
-    g.fillRect(0, 0, 512, 192);
-    // Rivets.
-    g.fillStyle = 'rgba(0,0,0,0.4)';
-    for (const [x, y] of [[14, 14], [498, 14], [14, 178], [498, 178]]) {
-      g.beginPath();
-      g.arc(x, y, 5, 0, Math.PI * 2);
-      g.fill();
-    }
-  } else {
-    g.clearRect(0, 0, 512, 192);
-  }
-  g.fillStyle = fg;
-  g.font = 'bold 72px system-ui, sans-serif';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillText(text, 256, sub ? 78 : 96);
-  if (sub) {
-    g.font = 'bold 30px system-ui, sans-serif';
-    g.globalAlpha = 0.75;
-    g.fillText(sub, 256, 148);
-    g.globalAlpha = 1;
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
-}
-
-// Dusk sky gradient: amber horizon, orange band, violet, deep blue top, with a
-// low sun glow and a few soft cloud smudges painted in.
-export function skyTexture() {
-  const [canvas, g] = makeCanvas(1024, 512);
-  const grad = g.createLinearGradient(0, 512, 0, 0);
-  grad.addColorStop(0.0, '#e8935a');
-  grad.addColorStop(0.18, '#c96f4e');
-  grad.addColorStop(0.38, '#7a4a63');
-  grad.addColorStop(0.62, '#3d3358');
-  grad.addColorStop(1.0, '#1c2340');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 1024, 512);
-  // Sun glow low on the horizon.
-  const sun = g.createRadialGradient(300, 400, 0, 300, 400, 220);
-  sun.addColorStop(0, 'rgba(255,214,140,0.95)');
-  sun.addColorStop(0.25, 'rgba(255,170,90,0.55)');
-  sun.addColorStop(1, 'rgba(255,170,90,0)');
-  g.fillStyle = sun;
-  g.fillRect(0, 0, 1024, 512);
-  // Cloud smudges, lit from below.
-  const random = mulberry32(17);
-  for (let i = 0; i < 22; i += 1) {
-    const x = random() * 1024;
-    const y = 60 + random() * 220;
-    const w = 90 + random() * 190;
-    const h = 10 + random() * 22;
-    const cg = g.createRadialGradient(x, y, 0, x, y, w / 2);
-    cg.addColorStop(0, `rgba(255,190,150,${0.10 + random() * 0.12})`);
-    cg.addColorStop(1, 'rgba(255,190,150,0)');
-    g.fillStyle = cg;
-    g.beginPath();
-    g.ellipse(x, y, w / 2, h, 0, 0, Math.PI * 2);
-    g.fill();
-  }
-  // First stars near the top.
-  for (let i = 0; i < 90; i += 1) {
-    g.fillStyle = `rgba(255,255,255,${0.15 + random() * 0.4})`;
-    g.fillRect(random() * 1024, random() * 130, 1.5, 1.5);
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-// Soft radial glow: lamp pools, sun sprite, muzzle flash star base.
-export function glowTexture(inner = 'rgba(255,200,120,1)') {
-  const [canvas, g] = makeCanvas(128, 128);
-  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  grad.addColorStop(0, inner);
-  grad.addColorStop(0.4, 'rgba(255,170,90,0.45)');
-  grad.addColorStop(1, 'rgba(255,170,90,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 128, 128);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-// Scorch mark: dark centre fading to transparent, no warm halo.
-export function scorchTexture() {
-  const [canvas, g] = makeCanvas(128, 128);
-  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  grad.addColorStop(0, 'rgba(18,12,8,0.95)');
-  grad.addColorStop(0.55, 'rgba(18,12,8,0.55)');
-  grad.addColorStop(1, 'rgba(18,12,8,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 128, 128);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-// Puffy cloud sprite texture.
-export function cloudTexture(seed = 31) {
-  const random = mulberry32(seed);
-  const [canvas, g] = makeCanvas(256, 128);
-  g.clearRect(0, 0, 256, 128);
-  for (let i = 0; i < 14; i += 1) {
-    const x = 40 + random() * 176;
-    const y = 50 + random() * 30;
-    const r = 18 + random() * 30;
-    const grad = g.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, 'rgba(255,205,170,0.35)');
-    grad.addColorStop(1, 'rgba(255,205,170,0)');
-    g.fillStyle = grad;
-    g.beginPath();
-    g.arc(x, y, r, 0, Math.PI * 2);
-    g.fill();
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-// Muzzle flash: a 4-point star on transparent ground.
-export function flashTexture() {
-  const [canvas, g] = makeCanvas(128, 128);
-  g.clearRect(0, 0, 128, 128);
-  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 62);
-  grad.addColorStop(0, 'rgba(255,240,200,1)');
-  grad.addColorStop(0.35, 'rgba(255,180,70,0.9)');
-  grad.addColorStop(1, 'rgba(255,140,40,0)');
-  g.fillStyle = grad;
-  g.beginPath();
-  for (let i = 0; i < 8; i += 1) {
-    const ang = (i * Math.PI) / 4;
-    const r = i % 2 === 0 ? 62 : 14;
-    const x = 64 + Math.cos(ang) * r;
-    const y = 64 + Math.sin(ang) * r;
-    if (i === 0) g.moveTo(x, y);
-    else g.lineTo(x, y);
-  }
-  g.closePath();
-  g.fill();
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-// Chain-link fence: diamond mesh on transparent ground.
-export function fenceTexture() {
-  const [canvas, g] = makeCanvas(128, 128);
-  g.clearRect(0, 0, 128, 128);
-  g.strokeStyle = 'rgba(180,185,190,0.85)';
-  g.lineWidth = 2;
+function paintFence() {
+  const c = canvas(128, 128);
+  const x = c.getContext('2d');
+  x.clearRect(0, 0, 128, 128);
+  x.strokeStyle = 'rgba(200,208,216,0.85)';
+  x.lineWidth = 2;
   for (let i = -128; i < 256; i += 16) {
-    g.beginPath();
-    g.moveTo(i, 0);
-    g.lineTo(i + 128, 128);
-    g.stroke();
-    g.beginPath();
-    g.moveTo(i + 128, 0);
-    g.lineTo(i, 128);
-    g.stroke();
+    x.beginPath(); x.moveTo(i, 0); x.lineTo(i + 128, 128); x.stroke();
+    x.beginPath(); x.moveTo(i + 128, 0); x.lineTo(i, 128); x.stroke();
   }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  return tex;
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(6, 2);
+  return t;
 }
 
-// Tire marks: two curved rubber arcs on transparent ground, laid flat on the
-// concrete as decals. Seeded so the arcs differ per placement.
-export function tireTexture(seed = 61) {
-  const random = mulberry32(seed);
-  const [canvas, g] = makeCanvas(256, 128);
-  g.clearRect(0, 0, 256, 128);
-  for (let t = 0; t < 2; t += 1) {
-    const y0 = 30 + t * 52 + random() * 10;
-    g.strokeStyle = `rgba(16,12,8,${0.5 + random() * 0.2})`;
-    g.lineWidth = 13 + random() * 5;
-    g.beginPath();
-    g.moveTo(-10, y0);
-    g.bezierCurveTo(80, y0 + (random() * 24 - 12), 170, y0 + (random() * 24 - 12), 266, y0 + (random() * 16 - 8));
-    g.stroke();
-    // Tread ticks across the arc.
-    g.strokeStyle = 'rgba(16,12,8,0.35)';
-    g.lineWidth = 2;
-    for (let x = 10; x < 250; x += 14) {
-      g.beginPath();
-      g.moveTo(x, y0 - 7);
-      g.lineTo(x + 3, y0 + 7);
-      g.stroke();
+function paintSky() {
+  const c = canvas(16, 512);
+  const x = c.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 0, 512);
+  g.addColorStop(0, '#241a44');
+  g.addColorStop(0.42, '#5e2f56');
+  g.addColorStop(0.68, '#b34a3a');
+  g.addColorStop(0.85, '#e07b39');
+  g.addColorStop(1, '#f2a45a');
+  x.fillStyle = g;
+  x.fillRect(0, 0, 16, 512);
+  // A few early stars high up.
+  x.fillStyle = 'rgba(255,255,255,0.8)';
+  for (let i = 0; i < 12; i++) {
+    x.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 120), 1, 1);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function paintWindows(rng) {
+  const c = canvas(256, 256);
+  const x = c.getContext('2d');
+  x.fillStyle = '#241a33';
+  x.fillRect(0, 0, 256, 256);
+  for (let gy = 0; gy < 16; gy++) {
+    for (let gx = 0; gx < 16; gx++) {
+      if (rng.chance(0.42)) {
+        x.fillStyle = rng.chance(0.75) ? '#ffd27a' : '#9fd8ff';
+        x.globalAlpha = rng.range(0.5, 1);
+        x.fillRect(gx * 16 + 4, gy * 16 + 4, 8, 10);
+      }
     }
   }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
+  x.globalAlpha = 1;
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function paintScorch() {
+  const c = canvas(128, 128);
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(64, 64, 4, 64, 64, 62);
+  g.addColorStop(0, 'rgba(12,10,8,0.85)');
+  g.addColorStop(0.6, 'rgba(20,14,10,0.45)');
+  g.addColorStop(1, 'rgba(20,14,10,0)');
+  x.fillStyle = g;
+  x.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c);
+  return t;
+}
+
+// Build every texture once and hand the set back.
+export function makeTextures() {
+  const rng = new Rng(77);
+  return {
+    concrete: paintConcrete(rng),
+    containerRed: paintContainer('#9e3b2e', 'SBL-01', rng),
+    containerOlive: paintContainer('#6b6f3a', 'SBL-02', rng),
+    containerBlue: paintContainer('#3d5a78', 'SBL-03', rng),
+    containerTeal: paintContainer('#2e7a72', 'SBL-04', rng),
+    crate: paintCrate(rng),
+    barrelYellow: paintBarrel('#c79a2e', 'FUEL', rng),
+    barrelGrey: paintBarrel('#5a6068', 'OIL', rng),
+    hazard: paintHazard(),
+    siteA: paintSiteLetter('A', '#ffc94a'),
+    siteB: paintSiteLetter('B', '#59d8ff'),
+    fence: paintFence(),
+    sky: paintSky(),
+    windows: paintWindows(rng),
+    scorch: paintScorch(),
+  };
 }

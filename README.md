@@ -1,75 +1,76 @@
 # SABLE YARD
 
-[![make.fun · best-game-01](https://make.fun/badge/best-game-01.svg)](https://make.fun/bounty/best-game-01?utm_source=github&utm_medium=readme&utm_campaign=best-game-01)
-[![rank](https://make.fun/badge/best-game-01/Angga-Nugraha/sable-yard-best-game/rank.svg)](https://make.fun/bounty/best-game-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=best-game-01)
-[![reward](https://make.fun/badge/best-game-01/Angga-Nugraha/sable-yard-best-game/reward.svg)](https://make.fun/bounty/best-game-01?utm_source=github&utm_medium=readme&utm_campaign=best-game-01)
+![best-game-01](https://make.fun/badge/best-game-01.svg)
+![rank](https://make.fun/badge/best-game-01/Angga-Nugraha/sable-yard-best-game/rank.svg)
+![reward](https://make.fun/badge/best-game-01/Angga-Nugraha/sable-yard-best-game/reward.svg)
 
-A round-based tactical FPS in the browser, built on three.js 0.187.0. Vanguard
-attacks two sites in a dusk freight yard; the Wardens hold them. Plant the beacon
-or eliminate the other team, earn money, buy better guns, and do it again.
+A round-based tactical first-person shooter for one human player plus nine AI soldiers, played in a desktop browser. Entered in the [best-game-01 bounty](https://make.fun/bounty/best-game-01) on make.fun.
 
 ## The game
 
-- **First-person combat** — mouse look, WASD movement with acceleration, crouch,
-  jump, collision with the map. Hitscan guns with recoil and spread that punish
-  firing on the move; headshots deal 2.5x damage.
-- **Two teams, short rounds** — you plus four Vanguard bots against five Warden
-  bots. A round ends on elimination, a beacon detonation, a defuse, or the timer.
-  First to 4 rounds takes the match (max 7).
-- **An objective beyond killing** — hold E inside Site A (Foundry) or Site B
-  (Silos) for 3 seconds to plant the beacon; it detonates 35 seconds later unless
-  a Warden channels a 4-second defuse.
-- **Money and a buy menu** — $800 to start, +$300 per kill, +$325 for a round
-  win, +$150 for a loss, +$300 for a plant. Press B during the buy phase: a
-  shotgun, an SMG, a full-auto rifle, a DMR, a spark grenade and a plated vest.
-- **Bots that play** — they walk waypoint routes to the sites, hold angles,
-  react to what they see and hear, strafe and burst-fire with per-bot skill,
-  lob grenades at positions they lost sight of, and go for the defuse.
-- **HUD** — health, ammunition, round timer, score, money, alive counts, kill
-  feed, hitmarkers, a spread-reactive crosshair, and plant/defuse progress.
+Two teams of five fight over a freight yard at dusk. **Vanguard** (blue — your team) attacks; **Wardens** (teal) defend. A match is a series of rounds on a 40 × 28 m yard of shipping containers, crates, barrels, sandbags, cranes and lamp light under a purple-orange sky.
 
-## Play it
+**Win a round** by eliminating the other team — or, as Vanguard, by planting the beacon at Site A or Site B and letting its 35-second fuse run out. Wardens win by eliminating Vanguard, by defusing a planted beacon, or by surviving the 100-second round timer. **First team to 4 round wins takes the match** (at most 7 rounds).
 
-Serve `game/` with any static file server and open `index.html` in desktop
-Chrome. No build step, no network requests: every script, texture and sound
-is generated or vendored locally (three.js 0.187.0 under `game/vendor/`).
-
-```
-node serve.ts   # serves game/ at http://localhost:8080
-```
+Between rounds there is a **buy phase**: spend money earned from kills ($150) and round wins ($400) on weapons and gear.
 
 ## Controls
 
 | Key | Action |
 | --- | --- |
 | WASD | Move |
-| Mouse | Look (click to lock the pointer) |
-| Click / Right-click | Fire / Aim down sights |
+| Mouse | Aim (click the game to lock the pointer) |
+| Left click | Shoot (hitscan, headshots ×2.5) |
 | R | Reload |
-| 1–6 | Weapons & grenade |
-| Ctrl / Space | Crouch / Jump |
-| E (hold, inside a site) | Plant the beacon |
-| B | Buy menu (buy phase) |
+| 1–6 | Switch weapon (pistol / SMG / rifle / DMR / shotgun / grenade) |
+| B | Buy menu |
+| E (hold) | Plant the beacon at a site / defuse as a Warden |
+| G | Throw a spark grenade |
+| Right click | Scope the DMR |
 
-## Layout
+## The arsenal
 
-- `game/index.html` — page, HUD markup and styles, import map for three.js
-- `game/src/main.js` — boot, fixed 60 Hz loop, shooting, beacon, round flow
-- `game/src/world.js` — the 40×28 m freight yard, sky, lights, waypoint graph
-- `game/src/bots.js` — the nine soldiers: AI, skill tiers, character models
-- `game/src/combat.js` — hitscan shooting, tracers, impacts, grenades
-- `game/src/weapons.js` — five guns, grenade, vest; view models and economy
-- `game/src/player.js` — movement: acceleration, friction, jump, crouch
-- `game/src/rounds.js` — match state: phases, money, beacon, score
-- `game/src/hud.js` — HUD, kill feed, buy menu, banners, overlays
-- `game/src/textures.js` — procedural canvas textures (steel, concrete, sky)
-- `game/src/audio.js` — synthesised WebAudio sound effects (11 voices)
-- `game/src/palette.js` — the dusk palette
-- `game/src/rng.js` — seeded deterministic random numbers
-- `game/src/input.js` — keyboard and mouse, pointer lock
-- `main.ts` — hands the game in: copies `game/` + `screenshots/` to `/output`
-  and writes `/output/dossier.json` with `vendor/makefun-game.ts`
+- **P9 Sidearm** — free, always in your holster (12 rounds)
+- **Hornet SMG** — $900, 32 rounds, fast fire, short reach
+- **Pike Rifle** — $1,400, 30 rounds, the balanced workhorse
+- **Longshot DMR** — $2,300, scoped, 8 rounds, one shot at any range
+- **Breacher Shotgun** — $1,100, 8 pellets, devastating up close
+- **Spark Grenade** — $300, thrown, area damage
+- **Plate Vest** — $650, soaks half of every hit
 
-## License
+## The soldiers
 
-MIT — see [LICENSE](LICENSE).
+Nine AI soldiers in three skill tiers — veteran, regular, rookie — with different aim error, reaction time and burst discipline. They navigate a waypoint graph through the yard, acquire targets after a reaction delay, fire in bursts, fall back when hurt, push the sites as Vanguard and hold them as Wardens. When the beacon is planted, Wardens converge to defuse while Vanguard defends. Bot-vs-bot damage is scaled so rounds last; damage to and from the player is unscaled.
+
+Every soldier is built from simple 3D shapes — helmet dome and brim, goggle band, face mask, plate carrier with a team stripe, pouch, shoulder pads, backpack, jointed limbs with a walk cycle, and a gun assembled from barrel, muzzle, handguard, stock, magazine and sights.
+
+## Presentation
+
+- All textures are generated procedurally on canvas at load: corrugated container steel with rust streaks and stencil labels, stained and cracked concrete, wooden crates, labelled barrels, hazard striping, painted site letters and a gradient dusk sky. No image files.
+- All sound is synthesized with WebAudio: a distinct shot voice per weapon plus hits, kills, reload, dry fire, buying, interface clicks, beacon ticks, explosions and round-end stingers. No audio files.
+- Lighting is a warm low sun, hemisphere fill and a cool rim from the north, with warm lamp pools, filmic tone mapping and dusk fog. Muzzle flashes, tracers, impact sparks and scorch decals answer every shot.
+- The simulation runs a fixed 60 Hz step, decoupled from rendering, driven by a seeded generator so a given seed replays the same way.
+
+## Running it
+
+Serve `game/` with any static file server and open `index.html` in desktop Chrome — no build step, no network requests, three.js vendored locally under `game/vendor/three/`.
+
+## Files
+
+- `game/index.html` — page, HUD DOM, buy menu, import map
+- `game/src/main.js` — boot, 60 Hz loop, rounds, shooting, beacon, staging modes
+- `game/src/world.js` — the yard, colliders, waypoint graph
+- `game/src/bots.js` — soldier models, walk cycle, AI
+- `game/src/combat.js` — hitscan, tracers, sparks, grenades, damage
+- `game/src/weapons.js` — weapon definitions, shop, player rig
+- `game/src/player.js` — movement, camera, health, beacon carrying
+- `game/src/rounds.js` — round phases, timer, score, economy
+- `game/src/hud.js` — HUD, kill feed, buy menu, overlays
+- `game/src/textures.js` — procedural canvas textures
+- `game/src/audio.js` — WebAudio synth voices
+- `game/src/palette.js` — colours and materials
+- `game/src/rng.js` — seeded random generator
+- `game/src/input.js` — keyboard, mouse, pointer lock
+- `main.ts` — hands the game in: copies `game/` and `screenshots/` to the output dir and writes `dossier.json`
+
+Original game, names, art and sounds — SABLE YARD, Vanguard, Wardens — made for this bounty.

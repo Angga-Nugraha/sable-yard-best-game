@@ -1,76 +1,72 @@
-// Keyboard and mouse. Pointer lock turns mouse movement into look deltas;
-// the game also runs without it, because the screenshot modes steer the
-// camera from script. Key presses go into a small queue that the fixed-step
-// loop drains, so input is decided by the sim, not by the DOM event rate.
-export function createInput(domElement, onLockChange) {
-  const state = {
-    keys: new Set(),
-    firing: false,
-    aiming: false,
-    lookX: 0,
-    lookY: 0,
-  };
-  const pressed = [];
-  let locked = false;
-
-  function onKeyDown(event) {
-    if (event.repeat) return;
-    state.keys.add(event.code);
-    pressed.push(event.code);
-    if (event.code === 'Space') event.preventDefault();
+// SABLE YARD — keyboard + mouse + pointer lock. Keeps the live key set and
+// the mouse-look deltas; the game loop consumes them once per step.
+export class Input {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.keys = new Set();
+    this.lookDX = 0;
+    this.lookDY = 0;
+    this.firing = false;
+    this.locked = false;
+    this.onKey = null; // (code, down) — single-press actions live in main.js
+    this.onMouseDown = null;
+    this.onMouseUp = null;
+    this._bind();
   }
-  function onKeyUp(event) {
-    state.keys.delete(event.code);
+  _bind() {
+    window.addEventListener('keydown', (e) => {
+      if (e.repeat) return;
+      this.keys.add(e.code);
+      if (this.onKey) this.onKey(e.code, true);
+    });
+    window.addEventListener('keyup', (e) => {
+      this.keys.delete(e.code);
+      if (this.onKey) this.onKey(e.code, false);
+    });
+    window.addEventListener('blur', () => {
+      this.keys.clear();
+      this.firing = false;
+    });
+    document.addEventListener('pointerlockchange', () => {
+      this.locked = document.pointerLockElement === this.canvas;
+      if (!this.locked) this.firing = false;
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!this.locked) return;
+      this.lookDX += e.movementX || 0;
+      this.lookDY += e.movementY || 0;
+    });
+    this.canvas.addEventListener('mousedown', (e) => {
+      if (!this.locked) {
+        this.canvas.requestPointerLock();
+        return;
+      }
+      if (e.button === 0) {
+        this.firing = true;
+        if (this.onMouseDown) this.onMouseDown(0);
+      } else if (e.button === 2) {
+        if (this.onMouseDown) this.onMouseDown(2);
+      }
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) {
+        this.firing = false;
+        if (this.onMouseUp) this.onMouseUp(0);
+      } else if (e.button === 2) {
+        if (this.onMouseUp) this.onMouseUp(2);
+      }
+    });
+    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   }
-  function onMouseMove(event) {
-    if (!locked) return;
-    state.lookX += event.movementX || 0;
-    state.lookY += event.movementY || 0;
+  // Mouse-look deltas since the last call, then cleared.
+  consumeLook() {
+    const dx = this.lookDX;
+    const dy = this.lookDY;
+    this.lookDX = 0;
+    this.lookDY = 0;
+    return { dx, dy };
   }
-  function onMouseDown(event) {
-    if (!locked) return;
-    if (event.button === 0) state.firing = true;
-    if (event.button === 2) state.aiming = true;
+  has(code) {
+    return this.keys.has(code);
   }
-  function onMouseUp(event) {
-    if (event.button === 0) state.firing = false;
-    if (event.button === 2) state.aiming = false;
-  }
-  function onLock() {
-    locked = document.pointerLockElement === domElement;
-    onLockChange(locked);
-  }
-  function onContextMenu(event) {
-    event.preventDefault();
-  }
-
-  window.addEventListener('keydown', onKeyDown);
-  window.addEventListener('keyup', onKeyUp);
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mousedown', onMouseDown);
-  document.addEventListener('mouseup', onMouseUp);
-  document.addEventListener('pointerlockchange', onLock);
-  domElement.addEventListener('contextmenu', onContextMenu);
-
-  return {
-    state,
-    takeLook() {
-      const look = { x: state.lookX, y: state.lookY };
-      state.lookX = 0;
-      state.lookY = 0;
-      return look;
-    },
-    takePressed() {
-      return pressed.splice(0, pressed.length);
-    },
-    requestLock() {
-      domElement.requestPointerLock();
-    },
-    releaseLock() {
-      if (document.pointerLockElement) document.exitPointerLock();
-    },
-    isLocked() {
-      return locked;
-    },
-  };
 }

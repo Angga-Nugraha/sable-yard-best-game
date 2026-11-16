@@ -1,143 +1,108 @@
-// Movement: one mover shared by the player and every bot. Acceleration,
-// friction, gravity, jump and crouch, resolved as a box against the world's
-// colliders one axis at a time, so a wall never swallows a body. The player
-// wrapper adds the WASD input mapping on top.
+// SABLE YARD — the human player: Vanguard soldier, first person. WASD
+// movement with collision, mouse look, health and armour, the beacon on
+// their back, and the camera that rides their head.
 import * as THREE from 'three';
 
-const RADIUS = 0.34;
-const STAND_HEIGHT = 1.72;
-const CROUCH_HEIGHT = 1.12;
-const STAND_EYE = 1.6;
-const CROUCH_EYE = 1.02;
-const WALK_SPEED = 5.4;
-const CROUCH_SPEED = 2.5;
-const GROUND_ACCEL = 46;
-const AIR_ACCEL = 10;
-const FRICTION = 9.5;
-const GRAVITY = 21;
-const JUMP_SPEED = 6.4;
+export const EYE_HEIGHT = 1.62;
+export const PLAYER_SPEED = 4.5;
+export const PLAYER_RADIUS = 0.4;
 
-export function createMover(colliders, spawn) {
-  const body = {
-    position: new THREE.Vector3(spawn.x, 0, spawn.z),
-    velocity: new THREE.Vector3(),
-    yaw: 0,
-    pitch: 0,
-    eye: STAND_EYE,
-    onGround: true,
-    crouching: false,
-    height: STAND_HEIGHT,
-  };
-  const probe = new THREE.Box3();
-  const wish = new THREE.Vector3();
-
-  function overlaps(x, y, z, height, lift) {
-    probe.min.set(x - RADIUS, y + lift, z - RADIUS);
-    probe.max.set(x + RADIUS, y + height - lift, z + RADIUS);
-    for (const collider of colliders) if (probe.intersectsBox(collider)) return collider;
-    return null;
+export class Player {
+  constructor(world) {
+    this.world = world;
+    this.state = {
+      position: new THREE.Vector3(0, 0, 11.5),
+      yaw: 0,
+      pitch: 0,
+    };
+    this.hp = 100;
+    this.armor = 0;
+    this.alive = true;
+    this.hasBeacon = true;
+    this.plantProgress = 0;
+    this.deathYaw = 0;
   }
-
-  function look(dx, dy, sensitivity = 0.0022) {
-    body.yaw -= dx * sensitivity;
-    body.pitch = Math.max(-1.45, Math.min(1.45, body.pitch - dy * sensitivity));
+  teleport(x, z, yaw = 0) {
+    this.state.position.set(x, 0, z);
+    this.state.yaw = yaw;
+    this.state.pitch = 0;
   }
-
-  function recoil(pitchKick, yawKick) {
-    body.pitch = Math.min(1.45, body.pitch + pitchKick);
-    body.yaw += yawKick;
+  respawn(x, z, yaw = 0) {
+    this.hp = 100;
+    this.armor = 0;
+    this.alive = true;
+    this.hasBeacon = true;
+    this.plantProgress = 0;
+    this.teleport(x, z, yaw);
   }
-
-  // wishX/wishZ are a world-space direction (already rotated by the caller's yaw).
-  function step(dt, wishX, wishZ, opts = {}) {
-    const crouch = !!opts.crouch;
-    const jump = !!opts.jump;
-    if (crouch && !body.crouching) {
-      body.crouching = true;
-      body.height = CROUCH_HEIGHT;
-    } else if (!crouch && body.crouching && !overlaps(body.position.x, body.position.y, body.position.z, STAND_HEIGHT, 0.02)) {
-      body.crouching = false;
-      body.height = STAND_HEIGHT;
-    }
-    const eyeTarget = body.crouching ? CROUCH_EYE : STAND_EYE;
-    body.eye += (eyeTarget - body.eye) * Math.min(1, dt * 12);
-
-    const speed = (opts.speed ?? WALK_SPEED) * (body.crouching ? CROUCH_SPEED / WALK_SPEED : 1);
-    const len = Math.hypot(wishX, wishZ);
-    if (len > 0.001) wish.set(wishX / len, 0, wishZ / len);
-    else wish.set(0, 0, 0);
-    const blend = Math.min(1, ((body.onGround ? GROUND_ACCEL : AIR_ACCEL) * dt) / Math.max(speed, 0.1));
-    body.velocity.x += (wish.x * speed - body.velocity.x) * blend;
-    body.velocity.z += (wish.z * speed - body.velocity.z) * blend;
-    if (body.onGround && len <= 0.001) {
-      const damp = Math.max(0, 1 - FRICTION * dt);
-      body.velocity.x *= damp;
-      body.velocity.z *= damp;
-    }
-
-    if (jump && body.onGround) {
-      body.velocity.y = JUMP_SPEED;
-      body.onGround = false;
-    }
-    body.velocity.y -= GRAVITY * dt;
-
-    const nextX = body.position.x + body.velocity.x * dt;
-    if (!overlaps(nextX, body.position.y, body.position.z, body.height, 0.04)) body.position.x = nextX;
-    else body.velocity.x = 0;
-    const nextZ = body.position.z + body.velocity.z * dt;
-    if (!overlaps(body.position.x, body.position.y, nextZ, body.height, 0.04)) body.position.z = nextZ;
-    else body.velocity.z = 0;
-
-    body.position.y += body.velocity.y * dt;
-    body.onGround = false;
-    const hit = overlaps(body.position.x, body.position.y, body.position.z, body.height, 0);
-    if (hit && body.velocity.y <= 0) {
-      body.position.y = hit.max.y;
-      body.velocity.y = 0;
-      body.onGround = true;
-    } else if (hit) {
-      body.position.y = hit.min.y - body.height;
-      body.velocity.y = 0;
-    }
-    if (body.position.y < 0) {
-      body.position.y = 0;
-      body.velocity.y = 0;
-      body.onGround = true;
-    }
-    body.velocity.y = Math.max(-30, body.velocity.y);
+  forward() {
+    return new THREE.Vector3(-Math.sin(this.state.yaw), 0, -Math.cos(this.state.yaw));
   }
-
-  return {
-    state: body,
-    look,
-    recoil,
-    step,
-    groundSpeed() {
-      return Math.hypot(body.velocity.x, body.velocity.z);
-    },
-    teleport(x, z, yaw = 0) {
-      body.position.set(x, 0, z);
-      body.velocity.set(0, 0, 0);
-      body.yaw = yaw;
-      body.pitch = 0;
-    },
-  };
-}
-
-export function createPlayer(colliders, spawn) {
-  const mover = createMover(colliders, spawn);
-  const body = mover.state;
-
-  function step(dt, keys) {
-    const forward = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
-    const strafe = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
-    const sin = Math.sin(body.yaw);
-    const cos = Math.cos(body.yaw);
-    mover.step(dt, -sin * forward + cos * strafe, -cos * forward - sin * strafe, {
-      crouch: keys.has('ControlLeft') || keys.has('ControlRight') || keys.has('KeyC'),
-      jump: keys.has('Space'),
-    });
+  eyePos() {
+    const p = this.state.position;
+    return new THREE.Vector3(p.x, p.y + EYE_HEIGHT, p.z);
   }
-
-  return { state: body, mover, step, look: mover.look, recoil: mover.recoil, groundSpeed: mover.groundSpeed, teleport: mover.teleport };
+  // Turn the view to look at a world point (used by the clip driver).
+  aimAt(point) {
+    const eye = this.eyePos();
+    const dx = point.x - eye.x;
+    const dy = point.y - eye.y;
+    const dz = point.z - eye.z;
+    this.state.yaw = Math.atan2(-dx, -dz);
+    this.state.pitch = Math.max(-1.45, Math.min(1.45, Math.atan2(dy, Math.hypot(dx, dz))));
+  }
+  look(dx, dy) {
+    this.state.yaw -= dx * 0.0023;
+    this.state.pitch = Math.max(-1.5, Math.min(1.5, this.state.pitch - dy * 0.0023));
+  }
+  // One fixed step of movement. keys is a Set of KeyboardEvent codes.
+  step(dt, keys) {
+    if (!this.alive) return;
+    let f = 0;
+    let s = 0;
+    if (keys.has('KeyW') || keys.has('ArrowUp')) f += 1;
+    if (keys.has('KeyS') || keys.has('ArrowDown')) f -= 1;
+    if (keys.has('KeyA') || keys.has('ArrowLeft')) s -= 1;
+    if (keys.has('KeyD') || keys.has('ArrowRight')) s += 1;
+    if (f === 0 && s === 0) return;
+    const len = Math.hypot(f, s);
+    f /= len;
+    s /= len;
+    const sin = Math.sin(this.state.yaw);
+    const cos = Math.cos(this.state.yaw);
+    // Forward is (-sin, -cos); right is (cos, -sin).
+    const mx = -sin * f + cos * s;
+    const mz = -cos * f - sin * s;
+    const p = this.state.position;
+    const nx = p.x + mx * PLAYER_SPEED * dt;
+    const nz = p.z + mz * PLAYER_SPEED * dt;
+    p.x = nx;
+    p.z = nz;
+    this.world.resolveCircle(p, PLAYER_RADIUS);
+  }
+  // Armour soaks half the damage until it breaks.
+  takeDamage(amount) {
+    if (!this.alive) return 0;
+    let rest = amount;
+    if (this.armor > 0) {
+      const soaked = Math.min(this.armor, rest * 0.5);
+      this.armor -= soaked;
+      rest -= soaked;
+    }
+    this.hp -= rest;
+    if (this.hp <= 0) {
+      this.hp = 0;
+      this.alive = false;
+    }
+    return rest;
+  }
+  healToFull() {
+    this.hp = 100;
+  }
+  syncCamera(camera) {
+    const p = this.state.position;
+    camera.position.set(p.x, p.y + EYE_HEIGHT, p.z);
+    camera.rotation.order = 'YXZ';
+    camera.rotation.set(this.state.pitch, this.state.yaw, 0);
+  }
 }

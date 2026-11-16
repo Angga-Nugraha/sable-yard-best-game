@@ -1,138 +1,147 @@
-// The match: rounds, phases, money and the beacon. One state object, one
-// update function, events out through onEvent so main.js can wire HUD, bots
-// and audio. Phases: 'buy' (15 s, shop open) -> 'live' (100 s) -> 'planted'
-// (35 s fuse) -> 'end' (4 s banner) -> next round. First to 4 round wins
-// takes the match (max 7).
-import { WEAPONS, GRENADE, VEST } from './weapons.js';
+// SABLE YARD — rounds and economy. A match is a series of rounds: a
+// 15-second buy phase, then up to 100 seconds of live play. Vanguard wins a
+// round by eliminating the Wardens or by planting the beacon and letting its
+// 35-second fuse run out. Wardens win by eliminating Vanguard, by defusing a
+// planted beacon, or by surviving the timer. First to 4 round wins takes the
+// match (at most 7 rounds). Money carries between rounds; kills and round
+// wins pay.
+import { START_MONEY, KILL_REWARD, ROUND_WIN_REWARD, ROUND_LOSS_REWARD } from './weapons.js';
 
 export const BUY_TIME = 15;
 export const ROUND_TIME = 100;
 export const FUSE_TIME = 35;
-export const END_TIME = 4;
+export const PLANT_TIME = 3;
+export const DEFUSE_TIME = 4;
+export const END_TIME = 6;
 export const WIN_ROUNDS = 4;
 export const MAX_ROUNDS = 7;
 
-export const SHOP = [
-  { id: 'scatter', name: WEAPONS.scatter.name, desc: 'Close quarters, 8 pellets', price: WEAPONS.scatter.price, key: '2' },
-  { id: 'hornet', name: WEAPONS.hornet.name, desc: 'Full-auto SMG, 32 rounds', price: WEAPONS.hornet.price, key: '3' },
-  { id: 'pike', name: WEAPONS.pike.name, desc: 'Full-auto rifle, 30 rounds', price: WEAPONS.pike.price, key: '4' },
-  { id: 'longshot', name: WEAPONS.longshot.name, desc: 'High damage, slow fire', price: WEAPONS.longshot.price, key: '5' },
-  { id: 'spark', name: GRENADE.name, desc: 'Arced throw, blast radius 7 m', price: GRENADE.price, key: '6' },
-  { id: 'vest', name: VEST.name, desc: '+25 max health this round', price: VEST.price, key: '7' },
-];
-
-export function createMatch(onEvent) {
-  const state = {
-    round: 1,
-    phase: 'buy',
-    phaseTime: BUY_TIME,
-    score: { vanguard: 0, warden: 0 },
-    money: 800,
-    kills: 0,
-    deaths: 0,
-    plants: 0,
-    defuses: 0,
-    beacon: { planted: false, x: 0, z: 0, siteId: null, fuseLeft: 0 },
-    plant: { active: false, progress: 0, siteId: null },
-    winner: null,
-    matchWinner: null,
-    over: false,
-  };
-
-  function emit(type, data) {
-    if (onEvent) onEvent(type, data);
+export class Match {
+  constructor() {
+    this.state = {
+      phase: 'title', // title | buy | live | end | matchEnd
+      phaseTime: 0,
+      round: 1,
+      score: { vanguard: 0, warden: 0 },
+      money: START_MONEY,
+      kills: 0,
+      beacon: { state: 'carried', site: null, fuse: 0, plantProgress: 0 },
+      lastResult: null, // {winner, reason}
+      matchWinner: null,
+    };
+    this.onRoundEnd = null;
+    this.onMatchEnd = null;
   }
-
-  function startRound() {
-    state.phase = 'buy';
-    state.phaseTime = BUY_TIME;
-    state.beacon.planted = false;
-    state.beacon.siteId = null;
-    state.plant.active = false;
-    state.plant.progress = 0;
-    state.winner = null;
-    emit('round-start', { round: state.round });
+  newMatch() {
+    this.state.score = { vanguard: 0, warden: 0 };
+    this.state.round = 1;
+    this.state.money = START_MONEY;
+    this.state.kills = 0;
+    this.state.matchWinner = null;
+    this.state.lastResult = null;
+    this.state.beacon = { state: 'carried', site: null, fuse: 0, plantProgress: 0 };
   }
-
-  function endRound(winner, reason) {
-    if (state.phase === 'end' || state.over) return;
-    state.phase = 'end';
-    state.phaseTime = END_TIME;
-    state.winner = winner;
-    state.score[winner] += 1;
-    if (winner === 'vanguard') {
-      state.money += 325;
-      emit('round-win', { winner, reason });
-    } else {
-      state.money += 150;
-      emit('round-lose', { winner, reason });
+  // The harness calls startRound() bare; the game binds its context once.
+  attach(ctx) {
+    this._ctx = ctx;
+  }
+  // Reset the board for a round: fresh buy phase, rig back to the pistol.
+  startRound(ctx = this._ctx) {
+    ctx.bots.reset();
+    ctx.player.respawn(ctx.world.spawnVanguard.x, ctx.world.spawnVanguard.z, 0);
+    ctx.rig.reset();
+    for (const g of ctx.grenades) g.scene.remove(g.mesh);
+    ctx.grenades.length = 0;
+    this.state.beacon = { state: 'carried', site: null, fuse: 0, plantProgress: 0 };
+    this.state.phase = 'buy';
+    this.state.phaseTime = BUY_TIME;
+    this.state.lastResult = null;
+    ctx.hud.clearBanner();
+    ctx.hud.hideOverlay();
+    ctx.hud.showBuy(false);
+  }
+  startLive() {
+    if (this.state.phase !== 'buy') return;
+    this.state.phase = 'live';
+    this.state.phaseTime = ROUND_TIME;
+  }
+  plantBeacon(site) {
+    const b = this.state.beacon;
+    b.state = 'planted';
+    b.site = site;
+    b.fuse = FUSE_TIME;
+    b.plantProgress = 0;
+  }
+  defuseBeacon(bot) {
+    const b = this.state.beacon;
+    if (b.state !== 'planted') return;
+    b.state = 'defused';
+    b.fuse = 0;
+    this.endRound('warden', `Beacon defused by a Warden`, bot);
+  }
+  endRound(winner, reason, byBot = null) {
+    if (this.state.phase === 'end' || this.state.phase === 'matchEnd') return;
+    this.state.score[winner] += 1;
+    this.state.lastResult = { winner, reason, byBot: byBot ? byBot.tierName : null };
+    this.state.phase = 'end';
+    this.state.phaseTime = END_TIME;
+    // Payday: winners take more.
+    if (winner === 'vanguard') this.state.money += ROUND_WIN_REWARD;
+    else this.state.money += ROUND_LOSS_REWARD;
+    if (this.onRoundEnd) this.onRoundEnd(winner, reason);
+    if (this.state.score[winner] >= WIN_ROUNDS || this.state.round >= MAX_ROUNDS) {
+      this.state.matchWinner = this.state.score.vanguard > this.state.score.warden ? 'vanguard'
+        : this.state.score.warden > this.state.score.vanguard ? 'warden' : 'draw';
     }
-    if (state.score[winner] >= WIN_ROUNDS || state.round >= MAX_ROUNDS) {
-      state.matchWinner = state.score.vanguard > state.score.warden
-        ? 'vanguard'
-        : state.score.warden > state.score.vanguard ? 'warden' : 'draw';
-      state.over = true;
+  }
+  addKillReward() {
+    this.state.kills += 1;
+    this.state.money += KILL_REWARD;
+  }
+  update(dt, ctx) {
+    const s = this.state;
+    if (s.phase === 'buy') {
+      s.phaseTime -= dt;
+      if (s.phaseTime <= 0) this.startLive();
+      return;
     }
-  }
-
-  function nextRound() {
-    state.round += 1;
-    startRound();
-  }
-
-  function update(dt) {
-    if (state.phase === 'end') {
-      state.phaseTime -= dt;
-      if (state.phaseTime <= 0) {
-        if (state.over) emit('match-over', { winner: state.matchWinner });
-        else nextRound();
+    if (s.phase === 'live') {
+      s.phaseTime -= dt;
+      // Planted beacon fuse.
+      if (s.beacon.state === 'planted') {
+        s.beacon.fuse -= dt;
+        if (s.beacon.fuse <= 0) {
+          this.endRound('vanguard', 'Beacon detonated — Site destroyed');
+          return;
+        }
+      }
+      // Elimination checks.
+      const vanguardAlive = ctx.bots.aliveCount('vanguard') + (ctx.player.alive ? 1 : 0);
+      const wardenAlive = ctx.bots.aliveCount('warden');
+      if (wardenAlive === 0) {
+        this.endRound('vanguard', 'All Wardens eliminated');
+        return;
+      }
+      if (vanguardAlive === 0) {
+        this.endRound('warden', 'All Vanguard eliminated');
+        return;
+      }
+      if (s.phaseTime <= 0) {
+        this.endRound('warden', 'Time expired — Wardens hold the yard');
       }
       return;
     }
-    state.phaseTime -= dt;
-    if (state.phase === 'buy' && state.phaseTime <= 0) {
-      state.phase = 'live';
-      state.phaseTime = ROUND_TIME;
-      emit('round-live', {});
-    } else if (state.phase === 'live' && state.phaseTime <= 0) {
-      endRound('warden', 'Time expired — the beacon was never planted.');
-    } else if (state.phase === 'planted') {
-      state.beacon.fuseLeft -= dt;
-      if (state.beacon.fuseLeft <= 0) {
-        endRound('vanguard', 'The beacon detonated at the site.');
+    if (s.phase === 'end') {
+      s.phaseTime -= dt;
+      if (s.phaseTime <= 0) {
+        if (s.matchWinner) {
+          s.phase = 'matchEnd';
+          if (this.onMatchEnd) this.onMatchEnd(s.matchWinner);
+        } else {
+          s.round += 1;
+          this.startRound(ctx);
+        }
       }
     }
   }
-
-  function plantBeacon(site) {
-    state.beacon.planted = true;
-    state.beacon.x = site.x;
-    state.beacon.z = site.z;
-    state.beacon.siteId = site.id;
-    state.beacon.fuseLeft = FUSE_TIME;
-    state.phase = 'planted';
-    state.phaseTime = FUSE_TIME;
-    state.plants += 1;
-    state.money += 300;
-    emit('planted', { site: site.id });
-  }
-
-  function onKill(victimTeam, killerTeam, killerIsPlayer) {
-    if (killerIsPlayer && victimTeam === 'warden') {
-      state.kills += 1;
-      state.money += 300;
-    }
-  }
-
-  return {
-    state,
-    startRound,
-    endRound,
-    update,
-    plantBeacon,
-    onKill,
-    phaseTime() {
-      return Math.max(0, state.phaseTime);
-    },
-  };
 }

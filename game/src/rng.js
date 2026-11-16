@@ -1,28 +1,33 @@
-// Seeded random numbers. The match takes one stream from the ?seed=
-// parameter, so a screenshot setup replays the same bot placement and the
-// same round plan every time, and a full-round sim is repeatable.
-export function mulberry32(seed) {
-  let a = seed | 0;
-  return function next() {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-export function pick(random, list) {
-  return list[Math.floor(random() * list.length) % list.length];
-}
-
-export function shuffle(random, list) {
-  const out = list.slice();
-  for (let i = out.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(random() * (i + 1));
-    const held = out[i];
-    out[i] = out[j];
-    out[j] = held;
+// SABLE YARD — seeded random numbers. One tiny generator so a seed replays
+// the same way: mulberry32, fast and deterministic across browsers.
+export class Rng {
+  constructor(seed = 1337) {
+    this.s = (seed >>> 0) || 1;
   }
-  return out;
+  // Next float in [0, 1).
+  next() {
+    let t = (this.s += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  range(a, b) {
+    return a + (b - a) * this.next();
+  }
+  int(a, b) {
+    return Math.floor(this.range(a, b + 1));
+  }
+  pick(list) {
+    return list[Math.floor(this.next() * list.length)];
+  }
+  chance(p) {
+    return this.next() < p;
+  }
+  // Gaussian-ish jitter in [-1, 1] from two draws.
+  gauss() {
+    return this.next() + this.next() - 1;
+  }
 }
+
+// A module-level convenience generator for cosmetic randomness.
+export const cosmetic = new Rng(20261117);
